@@ -145,7 +145,6 @@ process.on('SIGTERM', quit);
   usdRate = await getUSDRate();
   console.log('Current USD Rate: ' + usdRate);
 
-  // TODO fee estimation is wrong
   feeEst = (await getFeeEst()) + 5; // Add 5 satoshis for priority
   let feeUsd = (Math.round((feeEst / 1e8) * (usdRate) * 100) / 100);
   console.log('Current estimated transaction fee: ' + feeEst + ' satoshis (approx. ' + feeUsd + ' USD) per input/output');
