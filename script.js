@@ -135,7 +135,7 @@ async function sendBTC(address, keyPair) {
   console.log('Sorry, haven\'t gotten that far yet.');
 }
 
-async function quit() {
+function quit() {
   console.log('\nGoodbye! :-)\n');
   process.exit(0);
 }
@@ -205,7 +205,7 @@ process.on('SIGTERM', quit);
         await sendBTC(address, keyPair);
         break;
       case 'quit':
-        await quit();
+        quit();
         break;
     }
   }
