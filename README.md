@@ -14,4 +14,4 @@ cd btctx
 npm i
 ```
 
-Run via `npm start`. You will need to create a `keys.json` file.
+Run via `npm start`, or `node script.js`. You will need to create a `keys.json` file using the `keys.example.json` format as a guide.
