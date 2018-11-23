@@ -5,6 +5,7 @@ const request = require('request-promise-native');
 const promptly = require('promptly');
 const bitcoin = require('bitcoinjs-lib');
 const keyPairs = require('./keys.json');
+const qrcode = require('qrcode-terminal');
 
 const insight = {
   rate: 'https://bitpay.com/rates',
@@ -74,6 +75,10 @@ async function setFee() {
 
   console.log('\nFee amount set to ' + feeEst + ' satoshis per input/output (' + feeUsd + ' USD).');
 };
+
+async function generateQR(address) {
+  return qrcode.generate('bitcoin:' + address);
+}
 
 async function sendBTC(address, keyPair) {
   console.log('Gathering UTXOS.... \n');
@@ -174,6 +179,7 @@ process.on('SIGTERM', quit);
   console.log(`Interacting with wallet ${key.name} -- address ${address}`);
 
   let actions = {
+    qr      : 'Generate QR code for address',
     balance : 'Get wallet balance',
     send    : 'Send Bitcoin',
     set     : 'Override Fee Satoshis',
@@ -202,6 +208,10 @@ process.on('SIGTERM', quit);
       case 'send':
         console.log('Preparing to send bitcoin...\n')
         await sendBTC(address, keyPair);
+        break;
+      case 'qr':
+        console.log('Generating QR code...\n');
+        await generateQR(address);
         break;
       case 'quit':
         quit();
