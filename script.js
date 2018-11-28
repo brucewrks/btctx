@@ -7,17 +7,20 @@ const bitcoin = require('bitcoinjs-lib');
 const keyPairs = require('./keys.json');
 const qrcode = require('qrcode-terminal');
 
-const insight = {
-  rate: 'https://bitpay.com/rates',
-  addr: 'https://insight.bitpay.com/api/addr/',
-  utxo: 'https://insight.bitpay.com/api/addr/address/utxo',
-  fees: 'https://insight.bitpay.com/api/utils/estimatefee?nbBlocks=1',
-  send: 'https://insight.bitpay.com/api/tx/send'
-};
+// Ease-of-use
+const urls = require('./includes/urls.js');
 
+// Currency Converters
+const usd = require('./includes/usd.js');
+const btc = require('./includes/btc.js');
+const satoshis = require('./includes/satoshis.js');
+
+/**
+ * Retrieves the USD Exchange Rate From Insight.
+ */
 let usdRate;
 async function getUSDRate() {
-  let rates = await request(insight.rate);
+  let rates = await request(urls.rate);
   rates = JSON.parse(rates).data;
 
   for (let o of rates) {
@@ -26,29 +29,46 @@ async function getUSDRate() {
   }
 }
 
+/**
+ * Gets fee estimate per input/output
+ *
+ * @returns SatoshiConverter
+ */
 let feeEst;
-async function getFeeEst() { // Returns estimated fee satoshis
-  let fees = await request(insight.fees);
+async function getFeeEst() {
+  let fees = await request(urls.fees);
   fees = JSON.parse(fees);
-  return Math.round(fees['1'] * 1e8 / 1024) + 5;
+  return satoshis((Math.round(fees['1'] * 1e8 / 1024) + 5), usdRate);
 }
 
+/**
+ * Gets wallet balance
+ *
+ * @returns Object
+ */
 async function getBalance(address, keyPair) {
-  let addrDetails = await request.get(insight.addr + address);
+  let addrDetails = await request.get(urls.addr + address);
   addrDetails = JSON.parse(addrDetails);
 
-  let confirmed = parseInt(addrDetails.balanceSat) / 1e8;
-  let unconfirmed = parseInt(addrDetails.unconfirmedBalanceSat) / 1e8;
+  let confirmed = satoshis(parseInt(addrDetails.balanceSat), usdRate);
+  let unconfirmed = satoshis(parseInt(addrDetails.unconfirmedBalanceSat), usdRate);
 
   console.log('This wallet currently has the following balance: \n');
-  console.log('Confirmed: ' + confirmed + ' (approx. ' + (confirmed * usdRate) + ' USD)');
-  console.log('Unconfirmed: ' + unconfirmed + ' (approx. ' + (unconfirmed * usdRate) + ' USD)');
+  console.log('Confirmed: ' + confirmed.btc + ' (' + confirmed.usd + ' USD)');
+  console.log('Unconfirmed: ' + confirmed.btc + ' (' + unconfirmed.usd + ' USD)');
 
-  return { confirmed, unconfirmed };
+  return { confirmed: confirmed.satoshis, unconfirmed: unconfirmed.satoshis };
 }
 
+/**
+ * Retrieves available UTXOs for given address
+ *
+ * @param String address The wallet address to check UTXOs for
+ *
+ * @return Object
+ */
 async function getUTXOS(address) {
-  let url = insight.utxo.replace('address', address);
+  let url = urls.utxo.replace('address', address);
   let utxos = await request(url);
   utxos = JSON.parse(utxos);
 
@@ -60,20 +80,20 @@ async function getUTXOS(address) {
     total += utxo.satoshis;
   }
 
-  let usdAmount = (total / 1e8) * usdRate;
+  let total = satoshis(total, usdRate);
+  console.log(`Wallet currently has ${count} UTXOS totaling ${ total.btc } BTC (${total.usd} USD) \n`);
 
-  console.log(`Wallet currently has ${count} UTXOS totaling ${ total / 1e8 } BTC (${usdAmount} USD) \n`);
-
-  return { utxos, available: total };
+  return { utxos, available: total.satoshis };
 }
 
+/**
+ * Sets up fees for transactions
+ */
 async function setFee() {
   let amount = await promptly.prompt('Enter Satoshi amount: ');
-  feeEst = parseInt(amount);
 
-  let feeUsd = (Math.round((feeEst / 1e8) * (usdRate) * 100) / 100);
-
-  console.log('\nFee amount set to ' + feeEst + ' satoshis per input/output (' + feeUsd + ' USD).');
+  feeEst = satoshis(parseInt(amount), usdRate);
+  console.log('\nFee amount set to ' + feeEst.satoshis + ' satoshis per input/output (' + feeEst.usd + ' USD).');
 };
 
 async function generateQR(address) {
@@ -87,23 +107,24 @@ async function sendBTC(address, keyPair) {
   let tx = new bitcoin.TransactionBuilder();
 
   let amount = await promptly.prompt('Enter the USD amount you\'d like to send: ');
-  amount = Math.round((parseFloat(amount) / usdRate) * 1e8); // Changed to Satoshis
+  amount = usd(amount, usdRate);
 
-  console.log('\n Preparing to send ' + amount + ' Satoshis.\n');
+  console.log('\n Preparing to send ' + amount.satoshis + ' Satoshis.\n');
 
   let toAddress = await promptly.prompt('Enter the address you\'d like to send to: ');
 
   console.log('\nBuilding transaction... ');
 
   let feeAmount = 0;
+  let satoshis = amount.satoshis;
 
   try {
     for (let utxo of utxos) {
-      feeAmount += feeEst;
+      feeAmount += feeEst.satoshis;
       tx.addInput(utxo.txid, utxo.vout);
     }
 
-    let leftovers = available - (amount + feeAmount);
+    let leftovers = available - (satoshis + feeAmount);
     if (leftovers < 0) {
       throw new Error('Could not build this transaction. Amount declared greater than available resource.');
     }
@@ -125,7 +146,7 @@ async function sendBTC(address, keyPair) {
 
   console.log('\nTransaction info\n');
 
-  let txInfo = { amount, feeAmount, leftovers };
+  let txInfo = { satoshis, feeAmount, leftovers };
   console.log(txInfo);
 
   console.log('\nTransaction hex: \n');
@@ -150,9 +171,8 @@ process.on('SIGTERM', quit);
   usdRate = await getUSDRate();
   console.log('Current USD Rate: ' + usdRate);
 
-  feeEst = (await getFeeEst()) + 5; // Add 5 satoshis for priority
-  let feeUsd = (Math.round((feeEst / 1e8) * (usdRate) * 100) / 100);
-  console.log('Current estimated transaction fee: ' + feeEst + ' satoshis (approx. ' + feeUsd + ' USD) per input/output');
+  feeEst = (await getFeeEst());
+  console.log('Current estimated transaction fee: ' + feeEst.satoshis + ' satoshis (' + feeEst.usd + ' USD) per input/output');
 
   console.log('\n');
 
