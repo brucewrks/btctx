@@ -80,7 +80,7 @@ async function getUTXOS(address) {
     total += utxo.satoshis;
   }
 
-  let total = satoshis(total, usdRate);
+  total = satoshis(total, usdRate);
   console.log(`Wallet currently has ${count} UTXOS totaling ${ total.btc } BTC (${total.usd} USD) \n`);
 
   return { utxos, available: total.satoshis };
